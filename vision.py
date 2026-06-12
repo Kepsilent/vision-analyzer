@@ -13,7 +13,7 @@ Requirements:
 import argparse
 import base64
 import json
-import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 
@@ -23,6 +23,9 @@ MIME_MAP = {
     "jpg": "jpeg", "jpeg": "jpeg", "png": "png",
     "webp": "webp", "gif": "gif", "bmp": "bmp",
 }
+MAX_FILE_SIZE_MB = 20
+IMAGE_SIZE_LIMIT_BYTES = MAX_FILE_SIZE_MB * 1_000_000
+REQUEST_TIMEOUT = 120
 
 
 def analyze_image(image_path: str, prompt: str = "Describe this image in detail.") -> str:
@@ -32,10 +35,20 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
     # Security: only allow image files
     ext = path.suffix.lower()
     if ext not in SUPPORTED_EXTS:
-        return f"Error: Unsupported file type '{ext}'. Supported: {', '.join(sorted(SUPPORTED_EXTS))}"
+        return (f"Error: Unsupported file type '{ext}'. "
+                f"Supported: {', '.join(sorted(SUPPORTED_EXTS))}")
 
-    if not path.exists():
+    if not path.is_file():
         return f"Error: File not found: {path}"
+
+    # Security: reject symlinks pointing outside reasonable bounds
+    if path.is_symlink():
+        return "Error: Symbolic links are not allowed."
+
+    file_size = path.stat().st_size
+    if file_size > IMAGE_SIZE_LIMIT_BYTES:
+        return (f"Error: Image too large ({file_size / 1_000_000:.1f} MB). "
+                f"Max {MAX_FILE_SIZE_MB} MB.")
 
     try:
         with open(path, "rb") as f:
@@ -46,12 +59,9 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
         return f"Error reading file: {e}"
 
     mime = MIME_MAP.get(ext.lstrip("."), "jpeg")
-    size_mb = len(img_b64) * 3 / 4 / 1_000_000
-    if size_mb > 20:
-        return f"Error: Image too large ({size_mb:.1f} MB). Max 20 MB."
 
     payload = {
-        "model": "test",
+        "model": "local-vision",
         "messages": [{
             "role": "user",
             "content": [
@@ -59,7 +69,7 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
                 {"type": "image_url", "image_url": {"url": f"data:image/{mime};base64,{img_b64}"}},
             ],
         }],
-        "max_tokens": 500,
+        "max_tokens": 1024,
     }
 
     try:
@@ -68,9 +78,14 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
-        resp = json.loads(urllib.request.urlopen(req, timeout=120).read())
-    except urllib.error.URLError:
+        resp = json.loads(urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT).read())
+    except urllib.error.URLError as e:
+        if hasattr(e, 'reason') and isinstance(e.reason, TimeoutError):
+            return (f"Error: Request timed out after {REQUEST_TIMEOUT} seconds. "
+                    "The image may be too large or the model is overloaded.")
         return "Error: Cannot reach llama-server at http://127.0.0.1:8080. Is it running?"
+    except urllib.error.HTTPError as e:
+        return f"Error: llama-server returned HTTP {e.code}: {e.reason}"
     except json.JSONDecodeError:
         return "Error: Invalid response from llama-server."
     except Exception as e:

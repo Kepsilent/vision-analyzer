@@ -1,1 +1,6 @@
-# vision-analyzer has no external dependencies — uses only Python standard library
+# vision-analyzer — 无外部依赖
+#
+# 此项目使用 Python 标准库即可运行，无需 pip install 任何包。
+#
+# 如果你需要安装开发工具（可选）：
+#   pip install flake8 pytest
