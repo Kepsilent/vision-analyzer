@@ -13,6 +13,7 @@ Requirements:
 import argparse
 import base64
 import json
+import socket
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -80,7 +81,7 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
         )
         resp = json.loads(urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT).read())
     except urllib.error.URLError as e:
-        if hasattr(e, 'reason') and isinstance(e.reason, TimeoutError):
+        if hasattr(e, 'reason') and isinstance(e.reason, (TimeoutError, socket.timeout)):
             return (f"Error: Request timed out after {REQUEST_TIMEOUT} seconds. "
                     "The image may be too large or the model is overloaded.")
         return "Error: Cannot reach llama-server at http://127.0.0.1:8080. Is it running?"
