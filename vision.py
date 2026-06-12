@@ -29,7 +29,7 @@ IMAGE_SIZE_LIMIT_BYTES = MAX_FILE_SIZE_MB * 1_000_000
 REQUEST_TIMEOUT = 120
 
 
-def analyze_image(image_path: str, prompt: str = "Describe this image in detail.") -> str:
+def analyze_image(image_path: str, prompt: str = "Describe this image in detail.", server_url: str = SERVER_URL) -> str:
     """Send image to local llama-server for vision analysis."""
     path = Path(image_path).resolve()
 
@@ -75,7 +75,7 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
 
     try:
         req = urllib.request.Request(
-            SERVER_URL,
+            server_url,
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"},
         )
@@ -84,7 +84,7 @@ def analyze_image(image_path: str, prompt: str = "Describe this image in detail.
         if hasattr(e, 'reason') and isinstance(e.reason, (TimeoutError, socket.timeout)):
             return (f"Error: Request timed out after {REQUEST_TIMEOUT} seconds. "
                     "The image may be too large or the model is overloaded.")
-        return "Error: Cannot reach llama-server at http://127.0.0.1:8080. Is it running?"
+        return f"Error: Cannot reach llama-server at {server_url}. Is it running?"
     except urllib.error.HTTPError as e:
         return f"Error: llama-server returned HTTP {e.code}: {e.reason}"
     except json.JSONDecodeError:
@@ -106,9 +106,11 @@ def main():
     parser.add_argument("image", help="Path to image file")
     parser.add_argument("--prompt", default="Describe this image in detail.",
                         help="Custom prompt for analysis")
+    parser.add_argument("--server", default=SERVER_URL,
+                        help=f"llama-server URL (default: {SERVER_URL})")
     args = parser.parse_args()
 
-    result = analyze_image(args.image, args.prompt)
+    result = analyze_image(args.image, args.prompt, args.server)
     print(result)
 
 
